@@ -43,7 +43,7 @@ func (t NtlmTransport) RoundTrip(req *http.Request) (res *http.Response, err err
 
 	resp, err := client.Do(r)
 	if err != nil {
-		return nil, err
+		return resp, err
 	}
 
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {
@@ -51,28 +51,28 @@ func (t NtlmTransport) RoundTrip(req *http.Request) (res *http.Response, err err
 		// in order to do that it's required to read Body and close it
 		_, err = io.Copy(ioutil.Discard, resp.Body)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 		err = resp.Body.Close()
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		// retrieve Www-Authenticate header from response
 		ntlmChallengeHeader := resp.Header.Get("WWW-Authenticate")
 		if ntlmChallengeHeader == "" {
-			return nil, errors.New("Wrong WWW-Authenticate header")
+			return resp, errors.New("Wrong WWW-Authenticate header")
 		}
 
 		ntlmChallengeString := strings.Replace(ntlmChallengeHeader, "NTLM ", "", -1)
 		challengeBytes, err := decBase64(ntlmChallengeString)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		session, err := ntlm.CreateClientSession(ntlm.Version2, ntlm.ConnectionlessMode)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		session.SetUserInfo(t.User, t.Password, t.Domain)
@@ -80,23 +80,23 @@ func (t NtlmTransport) RoundTrip(req *http.Request) (res *http.Response, err err
 		// parse NTLM challenge
 		challenge, err := ntlm.ParseChallengeMessage(challengeBytes)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		err = session.ProcessChallengeMessage(challenge)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		// authenticate user
 		authenticate, err := session.GenerateAuthenticateMessage()
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 
 		// set NTLM Authorization header
 		req.Header.Set("Authorization", "NTLM "+encBase64(authenticate.Bytes()))
-		resp, err = client.Do(req)
+		return client.Do(req)
 	}
 
 	return resp, err
